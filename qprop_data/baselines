@@ -1,0 +1,67 @@
+import pandas as pd, re
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix
+import numpy as np
+
+# 1) Upload your QProp TSV into Colab (Files -> Upload), then set filename here
+FILE = "proppy_1.0.train.tsv"   # change if your file name differs
+
+df = pd.read_csv(FILE, sep="\t")
+print("Columns:", list(df.columns))
+print("Rows:", len(df))
+
+# 2) Set these after you see the columns printed above
+TEXT_COL  = "text"    # change to your text column
+LABEL_COL = "label"   # change to your label column (0/1 or -1/1)
+
+# 3) Minimal cleaning (safe + easy to explain)
+def clean(s):
+    s = str(s).lower()
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+df = df[[TEXT_COL, LABEL_COL]].dropna()
+df[TEXT_COL] = df[TEXT_COL].apply(clean)
+
+# If labels are -1/1, convert to 0/1 (optional)
+if set(df[LABEL_COL].unique()) == {-1, 1}:
+    df[LABEL_COL] = (df[LABEL_COL] == 1).astype(int)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    df[TEXT_COL], df[LABEL_COL], test_size=0.2, random_state=42, stratify=df[LABEL_COL]
+)
+
+# 4) TF-IDF features
+tfidf = TfidfVectorizer(
+    max_features=20000,
+    ngram_range=(1,2),     # unigrams + bigrams
+    stop_words="english"
+)
+Xtr = tfidf.fit_transform(X_train)
+Xte = tfidf.transform(X_test)
+
+# 5) Simple baseline classifier (handles imbalance better with class_weight)
+clf = LogisticRegression(max_iter=1000, class_weight="balanced")
+clf.fit(Xtr, y_train)
+
+pred = clf.predict(Xte)
+
+print("\nCONFUSION MATRIX:")
+print(confusion_matrix(y_test, pred))
+
+print("\nCLASSIFICATION REPORT:")
+print(classification_report(y_test, pred, digits=3))
+
+# 6) Top TF-IDF features (interpretable screenshot)
+feature_names = np.array(tfidf.get_feature_names_out())
+coef = clf.coef_[0]
+top_pos = feature_names[np.argsort(coef)[-15:]]   # features pushing toward label=1
+top_neg = feature_names[np.argsort(coef)[:15]]    # features pushing toward label=0
+
+print("\nTop features pushing PROPAGANDA (label=1):")
+print(list(top_pos))
+
+print("\nTop features pushing NON-PROPAGANDA (label=0):")
+print(list(top_neg))
